@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { isSameDay, isAfter, isBefore, format, isWithinInterval } from 'date-fns';
 import { getCalendarDays } from '@/utils/dateHelpers';
+import { useNotes } from '@/hooks/useNotes';
 
 export default function CalendarWidget() {
   const baseDate = new Date(2026, 0, 1); 
@@ -11,6 +12,17 @@ export default function CalendarWidget() {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [hoverDate, setHoverDate] = useState(null);
+
+  const currentNotesKey = useMemo(() => {
+		if (startDate && endDate) {
+			return `notes-${format(startDate, "yyyy-MM-dd")}-to-${format(endDate, "yyyy-MM-dd")}`;
+		} else if (startDate) {
+			return `notes-${format(startDate, "yyyy-MM-dd")}`;
+		}
+		return "notes-general";
+	}, [startDate, endDate]);
+
+	const { notes, saveNote, isLoaded } = useNotes(currentNotesKey);
 
   const handleDateClick = (clickedDate) => {
     if (!startDate) {
@@ -59,45 +71,65 @@ export default function CalendarWidget() {
   };
 
   return (
-    <div className="flex flex-col gap-6 h-full">
-      <div className="grid grid-cols-7 gap-y-4 gap-x-1 text-center border-b pb-4">
-        {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((day) => (
-          <div key={day} className="text-xs font-bold text-gray-400 tracking-wider">
-            {day}
-          </div>
-        ))}
-        
-        {days.map((dayObj, i) => (
-          <div key={i} className="flex justify-center relative py-1">
-            {startDate && (
-              <div className={`absolute inset-0 top-1 bottom-1 -z-10
-                ${isSameDay(dayObj.date, startDate) && (endDate || hoverDate) ? 'rounded-l-full bg-blue-100 w-1/2 right-0' : ''}
-                ${endDate && isSameDay(dayObj.date, endDate) ? 'rounded-r-full bg-blue-100 w-1/2 left-0' : ''}
-              `} />
-            )}
-            
-            <button
-              onClick={() => handleDateClick(dayObj.date)}
-              onMouseEnter={() => setHoverDate(dayObj.date)}
-              onMouseLeave={() => setHoverDate(null)}
-              className={getDayClasses(dayObj)}
-              disabled={!dayObj.isCurrentMonth}
-            >
-              {format(dayObj.date, 'd')}
-            </button>
-          </div>
-        ))}
-      </div>
+		<div className="flex flex-col gap-6 h-full">
+			<div className="grid grid-cols-7 gap-y-4 gap-x-1 text-center border-b pb-4">
+				{["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((day) => (
+					<div
+						key={day}
+						className="text-xs font-bold text-gray-400 tracking-wider">
+						{day}
+					</div>
+				))}
 
-      <div className="mt-auto pt-4">
-        <h3 className="text-sm font-bold text-gray-800 mb-2 uppercase tracking-wide">Notes</h3>
-        <textarea 
-          className="w-full h-24 resize-none rounded-md border border-gray-200 bg-gray-50 p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none text-sm text-gray-700 transition-all"
-          placeholder={startDate && endDate 
-            ? `Notes for ${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}...` 
-            : "Select a date range to add specific notes, or jot down general plans here..."}
-        />
-      </div>
-    </div>
-  );
+				{days.map((dayObj, i) => (
+					<div key={i} className="flex justify-center relative py-1">
+						{startDate && (
+							<div
+								className={`absolute inset-0 top-1 bottom-1 -z-10
+                ${isSameDay(dayObj.date, startDate) && (endDate || hoverDate) ? "rounded-l-full bg-blue-100 w-1/2 right-0" : ""}
+                ${endDate && isSameDay(dayObj.date, endDate) ? "rounded-r-full bg-blue-100 w-1/2 left-0" : ""}
+              `}
+							/>
+						)}
+
+						<button
+							onClick={() => handleDateClick(dayObj.date)}
+							onMouseEnter={() => setHoverDate(dayObj.date)}
+							onMouseLeave={() => setHoverDate(null)}
+							className={getDayClasses(dayObj)}
+							disabled={!dayObj.isCurrentMonth}>
+							{format(dayObj.date, "d")}
+						</button>
+					</div>
+				))}
+			</div>
+
+			<div className="mt-auto pt-4 border-t border-gray-100">
+				<div className="flex justify-between items-center mb-2">
+					<h3 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
+						{currentNotesKey === "notes-general"
+							? "General Notes"
+							: "Date Specific Notes"}
+					</h3>
+					<span className="text-[10px] text-gray-400 font-medium">
+						{isLoaded ? "Autosaved" : "Loading..."}
+					</span>
+				</div>
+
+				<textarea
+					value={notes}
+					onChange={(e) => saveNote(e.target.value)}
+					disabled={!isLoaded}
+					className="w-full h-24 resize-none rounded-md border border-gray-200 bg-gray-50 p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none text-sm text-gray-700 transition-all placeholder:text-gray-400"
+					placeholder={
+						startDate && endDate
+							? `Write down plans for ${format(startDate, "MMM d")} to ${format(endDate, "MMM d")}...`
+							: startDate
+								? `Write down plans for ${format(startDate, "MMM d")}...`
+								: "Jot down general memos for the month here..."
+					}
+				/>
+			</div>
+		</div>
+	);
 }
