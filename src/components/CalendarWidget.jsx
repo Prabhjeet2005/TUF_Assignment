@@ -21,6 +21,7 @@ import {
 	List,
 	Calendar as CalendarIcon,
 	Star,
+	Trash2,
 } from "lucide-react";
 
 const parseLocalDate = (dateStr) => {
@@ -145,7 +146,7 @@ export default function CalendarWidget({
 		return `notes-general-${format(currentDate, "yyyy-MM")}`;
 	}, [startDate, endDate, currentDate]);
 
-	const { notes, saveNote, isLoaded } = useNotes(currentNotesKey);
+	const { notes, saveNote, isLoaded, deleteNote } = useNotes(currentNotesKey);
 
 	const handleDateClick = (clickedDate) => {
 		// Parent range jump logic
@@ -423,6 +424,18 @@ export default function CalendarWidget({
 										? `${format(startDate, "MMMM d")} Notes`
 										: `General ${format(currentDate, "MMMM")} Notes`}
 							</h3>
+						</div>
+
+						{/* NEW: Delete Button & Status Indicator */}
+						<div className="flex items-center gap-3">
+							{notes.trim().length > 0 && (
+								<button
+									onClick={deleteNote}
+									className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-all transform hover:scale-110 active:scale-95"
+									title="Delete Note">
+									<Trash2 size={16} />
+								</button>
+							)}
 						</div>
 					</div>
 					<textarea

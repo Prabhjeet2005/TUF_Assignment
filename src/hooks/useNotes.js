@@ -1,3 +1,4 @@
+// src/hooks/useNotes.js
 import { useState, useEffect } from "react";
 
 export function useNotes(storageKey) {
@@ -18,12 +19,28 @@ export function useNotes(storageKey) {
 	const saveNote = (newNote) => {
 		setNotes(newNote);
 		try {
-			window.localStorage.setItem(storageKey, newNote);
+			// If the user clears the text box manually, let's just delete the key to save space
+			if (newNote.trim() === "") {
+				window.localStorage.removeItem(storageKey);
+			} else {
+				window.localStorage.setItem(storageKey, newNote);
+			}
 			window.dispatchEvent(new Event("notes-updated"));
 		} catch (error) {
 			console.warn("Error setting localStorage", error);
 		}
 	};
 
-	return { notes, saveNote, isLoaded };
+	// NEW: Dedicated delete function
+	const deleteNote = () => {
+		setNotes("");
+		try {
+			window.localStorage.removeItem(storageKey);
+			window.dispatchEvent(new Event("notes-updated"));
+		} catch (error) {
+			console.warn("Error removing from localStorage", error);
+		}
+	};
+
+	return { notes, saveNote, deleteNote, isLoaded };
 }
