@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Interactive Calendar Component
 
-## Getting Started
+**Live Demo:** https://tuf-assignment-bice.vercel.app/
+**Video Walkthrough:** [Insert your Loom/YouTube link here]
 
-First, run the development server:
+This project is a highly interactive, fully responsive React/Next.js calendar component built to emulate a physical wall calendar. It was developed to fulfill a frontend engineering challenge, focusing on clean architecture, complex state management, and an exceptional user experience.
 
+## ✨ Features
+
+* **Dynamic Day Range Selection:** Users can select start and end dates with a seamless, gapless visual highlight trail connecting the days.
+* **Persistent Local Storage Notes:** Integrated notes system that isolates data dynamically. Users can save "General Month" notes, or click specific dates/ranges to attach isolated memos. Data persists via a custom `localStorage` hook.
+* **Monthly Overview Dashboard:** A scrollable dashboard dynamically compiles and sorts all notes for the current month (Passed dates are pushed to the bottom, upcoming dates float to the top).
+* **Dynamic Theming & Imagery:** The calendar's primary colors, text hues, and hero image automatically change based on the current month to reflect the seasons.
+* **Holiday & Weekend Indicators:** Built-in holiday tracking puts a visual star on significant dates, and weekends are visually separated from weekdays.
+* **Fully Responsive:** Side-by-side layout on desktop that gracefully collapses to a stacked, touch-friendly UI on mobile devices.
+
+## 🏗️ Architectural Choices
+
+To demonstrate strong frontend fundamentals, I made specific architectural decisions regarding the tech stack and component structure:
+
+1.  **Framework: Next.js (App Router)**
+    * *Why:* While a standard Vite/React app would work, Next.js provides out-of-the-box optimizations, a strict and predictable folder structure (`src/app`), and seamless deployment via Vercel. 
+2.  **Styling: Tailwind CSS**
+    * *Why:* Chosen for rapid, utility-first UI development. It allowed me to build complex responsive layouts (like the side-by-side desktop view) and handle dynamic theming directly in the JSX without managing sprawling external stylesheets.
+3.  **State Management: React Hooks (`useState`, `useMemo`, `useCallback`)**
+    * *Why:* I deliberately avoided heavy global state managers like Redux or Zustand. The state of this component (start date, end date, current month) is highly localized. Lifting state to the parent `page.js` container was sufficient to keep the Hero Image and Calendar Widget perfectly synced.
+4.  **Date Logic: `date-fns`**
+    * *Why:* Handling date math manually (leap years, month rollovers, days of the week) is notoriously prone to bugs. `date-fns` is a lightweight, modular library that allowed me to cleanly generate the month grid and handle comparison logic (`isBefore`, `isWithinInterval`) without bloating the bundle size like Moment.js would.
+5.  **Data Persistence: Custom `useNotes` Hook**
+    * *Why:* Per the requirements, no backend was allowed. I built a custom hook to wrap `localStorage`. Crucially, this hook dispatches browser events upon saving, allowing disparate parts of the UI (like the calendar dots and the overview list) to instantly re-render without complex prop-drilling, while also implementing a hydration-safe loading state to prevent Next.js SSR mismatch errors.
+
+## 🚀 Running the Project Locally
+
+Follow these steps to run the component on your local machine.
+
+**Prerequisites:**
+Ensure you have [Node.js](https://nodejs.org/) installed on your machine.
+
+**1. Clone the repository**
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone [https://github.com/yourusername/your-repo-name.git](https://github.com/yourusername/your-repo-name.git)
+cd your-repo-name
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**2. Install dependencies**
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+**3. Run the development server**
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**4. View the application**
+Open your browser and navigate to `http://localhost:3000` to interact with the calendar.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🛠️ Tech Stack
+* React 18
+* Next.js 14
+* Tailwind CSS
+* date-fns
+* lucide-react (Icons)
+```
