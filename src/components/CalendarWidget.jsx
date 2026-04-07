@@ -13,12 +13,14 @@ import {
 } from "date-fns";
 import { getCalendarDays } from "@/utils/dateHelpers";
 import { useNotes } from "@/hooks/useNotes";
+import { HOLIDAYS } from "@/utils/calendarConfig";
 import {
 	ChevronLeft,
 	ChevronRight,
 	AlignLeft,
 	List,
 	Calendar as CalendarIcon,
+	Star,
 } from "lucide-react";
 
 const parseLocalDate = (dateStr) => {
@@ -26,16 +28,19 @@ const parseLocalDate = (dateStr) => {
 	return new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
 };
 
-export default function CalendarWidget({ currentDate, setCurrentDate }) {
+export default function CalendarWidget({
+	currentDate,
+	setCurrentDate,
+	theme,
+}) {
 	const days = useMemo(() => getCalendarDays(currentDate), [currentDate]);
 
-	// Requirement Met: Day Range Selector (Start, End, and Hover States)
 	const [startDate, setStartDate] = useState(null);
 	const [endDate, setEndDate] = useState(null);
 	const [hoverDate, setHoverDate] = useState(null);
 	const [allMonthNotes, setAllMonthNotes] = useState([]);
+	const [flipKey, setFlipKey] = useState(0); // Used to trigger flip animation
 
-	// Requirement Met: Integrated Notes (General vs Date Specific via Client Storage)
 	const refreshMonthNotes = useCallback(() => {
 		const notesList = [];
 		for (let i = 0; i < localStorage.length; i++) {
@@ -82,7 +87,28 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 				}
 			}
 		}
-		notesList.sort((a, b) => (a.type === "general" ? -1 : 1));
+
+		// ADVANCED SORTING LOGIC: General -> Ascending Upcoming -> Passed dates at bottom
+		notesList.sort((a, b) => {
+			if (a.type === "general" && b.type !== "general") return -1;
+			if (b.type === "general" && a.type !== "general") return 1;
+			if (a.type === "general" && b.type === "general") return 0;
+
+			const dateA = a.type === "range" ? a.start : a.date;
+			const dateB = b.type === "range" ? b.start : b.date;
+
+			const today = new Date();
+			today.setHours(0, 0, 0, 0);
+
+			const isAPassed = isBefore(dateA, today);
+			const isBPassed = isBefore(dateB, today);
+
+			if (isAPassed && !isBPassed) return 1; // A passed, push down
+			if (!isAPassed && isBPassed) return -1; // B passed, push down
+
+			return dateA.getTime() - dateB.getTime(); // Otherwise Ascending
+		});
+
 		setAllMonthNotes(notesList);
 	}, [currentDate]);
 
@@ -93,22 +119,23 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 			window.removeEventListener("notes-updated", refreshMonthNotes);
 	}, [refreshMonthNotes]);
 
-	const handlePrevMonth = () => {
-		setCurrentDate(subMonths(currentDate, 1));
+	// Handle Month Navigation with Flip Animation Trigger
+	const handleNav = (dir) => {
+		setCurrentDate(
+			dir === "next"
+				? addMonths(currentDate, 1)
+				: subMonths(currentDate, 1),
+		);
 		setStartDate(null);
 		setEndDate(null);
-	};
-	const handleNextMonth = () => {
-		setCurrentDate(addMonths(currentDate, 1));
-		setStartDate(null);
-		setEndDate(null);
+		setFlipKey((prev) => prev + 1);
 	};
 
-	// NEW: Quickly jump back to real-time Today
 	const handleGoToToday = () => {
 		setCurrentDate(new Date());
 		setStartDate(null);
 		setEndDate(null);
+		setFlipKey((prev) => prev + 1);
 	};
 
 	const currentNotesKey = useMemo(() => {
@@ -121,6 +148,7 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 	const { notes, saveNote, isLoaded } = useNotes(currentNotesKey);
 
 	const handleDateClick = (clickedDate) => {
+		// Parent range jump logic
 		if (!startDate && !endDate) {
 			const parentRangeNote = allMonthNotes.find(
 				(n) =>
@@ -138,12 +166,17 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 			setStartDate(clickedDate);
 			setEndDate(null);
 		} else if (startDate && !endDate) {
-			if (isBefore(clickedDate, startDate)) {
+			// BUG FIX: If user clicks the exact same start date again, deselect it.
+			if (isSameDay(clickedDate, startDate)) {
+				setStartDate(null);
+				setEndDate(null);
+			} else if (isBefore(clickedDate, startDate)) {
 				setStartDate(clickedDate);
 			} else {
 				setEndDate(clickedDate);
 			}
 		} else {
+			// If a range is already selected and they click again, start a new selection
 			setStartDate(clickedDate);
 			setEndDate(null);
 		}
@@ -162,58 +195,19 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 		}
 	};
 
-	const getDayClasses = (dayObj) => {
-		const { date, isCurrentMonth } = dayObj;
-		let classes =
-			"h-9 w-9 flex items-center justify-center rounded-full text-sm cursor-pointer transition-all duration-150 relative z-10 font-medium ";
-
-		if (!isCurrentMonth)
-			return classes + "text-gray-300 pointer-events-none";
-
-		const isStart = startDate && isSameDay(date, startDate);
-		const isEnd = endDate && isSameDay(date, endDate);
-		const isToday = isSameDay(date, new Date()); // NEW: Check if this is the actual today
-
-		let isBetween = false;
-		if (startDate && endDate) {
-			isBetween =
-				isWithinInterval(date, { start: startDate, end: endDate }) &&
-				!isStart &&
-				!isEnd;
-		} else if (startDate && hoverDate && isAfter(hoverDate, startDate)) {
-			isBetween =
-				isWithinInterval(date, { start: startDate, end: hoverDate }) &&
-				!isStart;
-		}
-
-		// Visual Hierarchy implementation
-		if (isStart || isEnd) {
-			classes += "bg-[#1a73e8] text-white shadow-sm";
-		} else if (isBetween) {
-			classes += "bg-transparent text-[#1a73e8]";
-		} else if (isToday) {
-			// NEW: Explicitly highlight today when unselected
-			classes += "bg-[#f1f3f4] text-[#1a73e8] font-bold";
-		} else {
-			classes += "text-[#3c4043] hover:bg-[#f1f3f4]";
-		}
-		return classes;
-	};
-
 	return (
-		<div className="flex flex-col h-full justify-between">
+		<div className="flex flex-col h-full justify-between animate-slide-up">
 			<div>
-				{/* Navigation Header */}
 				<div className="flex justify-between items-center mb-6">
 					<div className="flex items-center gap-4">
-						<h2 className="text-xl font-medium text-[#3c4043]">
+						<h2
+							className={`text-xl font-medium ${theme.text} transition-colors duration-500`}>
 							{format(currentDate, "MMMM yyyy")}
 						</h2>
-						{/* NEW: Today Button */}
 						{!isSameMonth(currentDate, new Date()) && (
 							<button
 								onClick={handleGoToToday}
-								className="text-xs font-medium px-3 py-1.5 rounded bg-[#f1f3f4] text-[#3c4043] hover:bg-[#e8eaed] transition-colors">
+								className={`text-xs font-bold px-3 py-1.5 rounded-full ${theme.light} ${theme.text} hover:opacity-80 transition-all transform hover:scale-105 active:scale-95`}>
 								Today
 							</button>
 						)}
@@ -221,25 +215,27 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 
 					<div className="flex gap-1">
 						<button
-							onClick={handlePrevMonth}
-							className="p-2 hover:bg-[#f1f3f4] rounded-full transition-colors text-[#5f6368]">
+							onClick={() => handleNav("prev")}
+							className={`p-2 hover:${theme.light} rounded-full transition-all hover:scale-110 active:scale-90 text-[#5f6368]`}>
 							<ChevronLeft size={20} />
 						</button>
 						<button
-							onClick={handleNextMonth}
-							className="p-2 hover:bg-[#f1f3f4] rounded-full transition-colors text-[#5f6368]">
+							onClick={() => handleNav("next")}
+							className={`p-2 hover:${theme.light} rounded-full transition-all hover:scale-110 active:scale-90 text-[#5f6368]`}>
 							<ChevronRight size={20} />
 						</button>
 					</div>
 				</div>
 
-				{/* Calendar Grid */}
-				<div className="grid grid-cols-7 gap-y-2 text-center mb-4">
+				{/* The Grid - Triggers Flip Animation on Key Change */}
+				<div
+					key={flipKey}
+					className="grid grid-cols-7 gap-y-2 text-center mb-4 animate-flip-in">
 					{["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map(
 						(day, index) => (
 							<div
 								key={index}
-								className="text-[10px] font-bold text-[#70757a] tracking-wider mb-2">
+								className={`text-[10px] font-bold tracking-wider mb-2 ${index > 4 ? "text-red-400" : "text-[#70757a]"}`}>
 								{day}
 							</div>
 						),
@@ -248,6 +244,10 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 					{days.map((dayObj, i) => {
 						const isStart = startDate && isSameDay(dayObj.date, startDate);
 						const isEnd = endDate && isSameDay(dayObj.date, endDate);
+						const isToday = isSameDay(dayObj.date, new Date());
+						const isWeekend =
+							dayObj.date.getDay() === 0 || dayObj.date.getDay() === 6;
+						const holidayName = HOLIDAYS[format(dayObj.date, "MM-dd")];
 
 						const hasSavedNote =
 							dayObj.isCurrentMonth &&
@@ -262,6 +262,26 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 								return false;
 							});
 
+						let isBetween = false;
+						if (startDate && endDate)
+							isBetween =
+								isWithinInterval(dayObj.date, {
+									start: startDate,
+									end: endDate,
+								}) &&
+								!isStart &&
+								!isEnd;
+						else if (
+							startDate &&
+							hoverDate &&
+							isAfter(hoverDate, startDate)
+						)
+							isBetween =
+								isWithinInterval(dayObj.date, {
+									start: startDate,
+									end: hoverDate,
+								}) && !isStart;
+
 						const showHighlight =
 							startDate &&
 							(endDate || hoverDate) &&
@@ -271,12 +291,17 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 							});
 
 						return (
-							<div key={i} className="flex justify-center relative py-1">
-								{/* Seamless Background Highlight for Range */}
+							<div
+								key={i}
+								className="flex justify-center relative py-1"
+								title={holidayName || ""}>
 								<div
-									className="absolute inset-0 top-1 bottom-1 z-0 bg-[#e8f0fe] transition-all"
+									className={`absolute inset-0 top-1 bottom-1 z-0 transition-colors duration-300 ${theme.selection}`}
 									style={{
-										display: showHighlight ? "block" : "none",
+										display:
+											showHighlight && dayObj.isCurrentMonth
+												? "block"
+												: "none",
 										left: isStart ? "50%" : "0",
 										right:
 											isEnd ||
@@ -302,14 +327,30 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 									onClick={() => handleDateClick(dayObj.date)}
 									onMouseEnter={() => setHoverDate(dayObj.date)}
 									onMouseLeave={() => setHoverDate(null)}
-									className={getDayClasses(dayObj)}
-									disabled={!dayObj.isCurrentMonth}>
+									disabled={!dayObj.isCurrentMonth}
+									className={`h-9 w-9 flex items-center justify-center rounded-full text-sm cursor-pointer transition-all duration-200 relative z-10 font-medium transform hover:scale-110 active:scale-95
+                    ${!dayObj.isCurrentMonth ? "text-gray-300 pointer-events-none" : ""}
+                    ${(isStart || isEnd) && dayObj.isCurrentMonth ? `${theme.primary} text-white shadow-md font-bold scale-110` : ""}
+                    ${isBetween && dayObj.isCurrentMonth ? `${theme.text} bg-transparent` : ""}
+                    ${isToday && !isStart && !isEnd && dayObj.isCurrentMonth ? `border-2 border-dashed ${theme.text}` : ""}
+                    ${!isStart && !isEnd && !isBetween && dayObj.isCurrentMonth ? (isWeekend || holidayName ? "text-red-500 hover:bg-red-50" : "text-[#3c4043] hover:bg-[#f1f3f4]") : ""}
+                  `}>
 									{format(dayObj.date, "d")}
 
-									{/* Indicator Dot for Notes */}
+									{/* Holiday / Note Indicators */}
+									{holidayName &&
+										dayObj.isCurrentMonth &&
+										!isStart &&
+										!isEnd && (
+											<Star
+												size={8}
+												fill="currentColor"
+												className="absolute top-0 right-0 text-yellow-400"
+											/>
+										)}
 									{hasSavedNote && (
 										<span
-											className={`absolute -bottom-1 w-1 h-1 rounded-full ${isStart || isEnd ? "bg-white" : "bg-[#1a73e8]"}`}
+											className={`absolute -bottom-1 w-1.5 h-1.5 rounded-full shadow-sm transition-colors duration-300 ${isStart || isEnd ? "bg-white" : theme.primary}`}
 										/>
 									)}
 								</button>
@@ -319,42 +360,63 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 				</div>
 			</div>
 
-			<div className="mt-4 flex flex-col gap-4">
-				{/* Creative Requirement Met: Month Overview List */}
+			<div
+				className="mt-4 flex flex-col gap-4 animate-slide-up"
+				style={{ animationDelay: "0.1s" }}>
 				{allMonthNotes.length > 0 && (
-					<div className="pt-4 border-t border-gray-100 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
-						<div className="flex items-center gap-2 mb-2 text-[#5f6368]">
+					<div className="pt-4 border-t border-gray-100 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
+						<div className={`flex items-center gap-2 mb-3 ${theme.text}`}>
 							<List size={14} />
 							<span className="text-[10px] font-bold uppercase tracking-wider">
 								Month Overview
 							</span>
 						</div>
-						<div className="flex flex-col gap-1">
-							{allMonthNotes.map((n) => (
-								<div
-									key={n.key}
-									onClick={() => jumpToNote(n)}
-									className="flex items-center gap-3 text-xs p-1.5 rounded hover:bg-[#f1f3f4] cursor-pointer transition-colors border-l-2 border-[#1a73e8]">
-									<span className="font-semibold whitespace-nowrap w-24 text-[#3c4043]">
-										{n.type === "general"
-											? "General"
-											: n.type === "single"
-												? format(n.date, "MMM d")
-												: `${format(n.start, "MMM d")} - ${format(n.end, "d")}`}
-									</span>
-									<span className="truncate text-[#5f6368]">{n.text}</span>
-								</div>
-							))}
+						<div className="flex flex-col gap-2">
+							{allMonthNotes.map((n) => {
+								const isPassed =
+									n.type !== "general" &&
+									isBefore(
+										n.type === "range" ? n.start : n.date,
+										new Date(new Date().setHours(0, 0, 0, 0)),
+									);
+								return (
+									<div
+										key={n.key}
+										onClick={() => jumpToNote(n)}
+										className={`flex items-center gap-3 text-xs p-2 rounded-md cursor-pointer transition-all duration-200 transform hover:translate-x-1 border-l-4 hover:shadow-sm
+                      ${isPassed ? "opacity-50 grayscale hover:grayscale-0" : ""}
+                    `}
+										style={{
+											borderLeftColor: theme.hex,
+											backgroundColor: isPassed ? "#f8f9fa" : "white",
+											boxShadow: !isPassed
+												? "0 1px 2px rgba(0,0,0,0.05)"
+												: "none",
+										}}>
+										<span
+											className={`font-bold whitespace-nowrap w-24 ${theme.text}`}>
+											{n.type === "general"
+												? "General"
+												: n.type === "single"
+													? format(n.date, "MMM d")
+													: `${format(n.start, "MMM d")} - ${format(n.end, "d")}`}
+										</span>
+										<span className="truncate text-[#5f6368] font-medium">
+											{n.text}
+										</span>
+									</div>
+								);
+							})}
 						</div>
 					</div>
 				)}
 
-				{/* Integrated Notes Text Area */}
 				<div className="pt-4 border-t border-gray-100 flex flex-col gap-3">
 					<div className="flex justify-between items-center text-[#3c4043]">
-						<div className="flex items-center gap-2">
-							<CalendarIcon size={16} className="text-[#5f6368]" />
-							<h3 className="text-sm font-medium">
+						<div
+							className={`flex items-center gap-2 ${theme.text} transition-colors duration-500`}>
+							<CalendarIcon size={16} />
+							<h3 className="text-sm font-bold">
 								{startDate && endDate
 									? `${format(startDate, "MMM d")} - ${format(endDate, "MMM d")} Notes`
 									: startDate
@@ -362,17 +424,16 @@ export default function CalendarWidget({ currentDate, setCurrentDate }) {
 										: `General ${format(currentDate, "MMMM")} Notes`}
 							</h3>
 						</div>
-						<span className="text-[10px] text-[#70757a]">
-							{isLoaded ? "Saved locally" : "Loading..."}
-						</span>
 					</div>
-
 					<textarea
 						value={notes}
 						onChange={(e) => saveNote(e.target.value)}
 						disabled={!isLoaded}
-						className="w-full h-24 resize-none bg-[#f1f3f4] hover:bg-[#e8eaed] rounded border border-transparent p-3 text-sm text-[#3c4043] focus:bg-white focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] focus:outline-none transition-all placeholder:text-[#70757a]"
-						placeholder="Type your notes here..."
+						className={`w-full h-24 resize-none bg-[#f8f9fa] rounded-xl border-2 border-transparent p-4 text-sm text-[#3c4043] focus:bg-white focus:outline-none transition-all duration-300 placeholder:text-[#9aa0a6]`}
+						style={{ focusBorderColor: theme.hex }}
+						onFocus={(e) => (e.target.style.borderColor = theme.hex)}
+						onBlur={(e) => (e.target.style.borderColor = "transparent")}
+						placeholder="Type your beautifully styled notes here..."
 					/>
 				</div>
 			</div>
