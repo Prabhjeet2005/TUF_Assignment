@@ -19,7 +19,7 @@ export function useNotes(storageKey) {
 		setNotes(newNote);
 		try {
 			window.localStorage.setItem(storageKey, newNote);
-			window.dispatchEvent(new Event("notesUpdated"));
+			window.dispatchEvent(new Event("notes-updated"));
 		} catch (error) {
 			console.warn("Error setting localStorage", error);
 		}

@@ -1,245 +1,359 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
 	isSameDay,
 	isAfter,
 	isBefore,
 	format,
 	isWithinInterval,
+	addMonths,
+	subMonths,
+	isSameMonth,
 } from "date-fns";
 import { getCalendarDays } from "@/utils/dateHelpers";
 import { useNotes } from "@/hooks/useNotes";
-import { HOLIDAYS } from "@/utils/calendarConfig";
+import { ChevronLeft, ChevronRight, AlignLeft, List } from "lucide-react";
 
-export default function CalendarWidget({ currentDate, theme }) {
+// Helper to reliably parse strings like "2026-01-15" into local dates without timezone shifts
+const parseLocalDate = (dateStr) => {
+	const [y, m, d] = dateStr.split("-");
+	return new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+};
+
+export default function CalendarWidget({ currentDate, setCurrentDate }) {
 	const days = useMemo(() => getCalendarDays(currentDate), [currentDate]);
 
 	const [startDate, setStartDate] = useState(null);
 	const [endDate, setEndDate] = useState(null);
 	const [hoverDate, setHoverDate] = useState(null);
-	const [animateKey, setAnimateKey] = useState(0);
-	const [allSavedNotes, setAllSavedNotes] = useState([]);
+	const [allMonthNotes, setAllMonthNotes] = useState([]);
 
-	const fetchAllNotes = () => {
-		const notesArray = [];
+	// --- NEW: Gather all notes for the current month ---
+	const refreshMonthNotes = useCallback(() => {
+		const notesList = [];
 		for (let i = 0; i < localStorage.length; i++) {
 			const key = localStorage.key(i);
 			if (key && key.startsWith("notes-")) {
-				const content = localStorage.getItem(key);
-				if (content && content.trim() !== "") {
-					notesArray.push({ key, content });
+				const value = localStorage.getItem(key);
+				if (!value || !value.trim()) continue; // Skip empty notes
+
+				if (key.startsWith("notes-general-")) {
+					if (
+						key.replace("notes-general-", "") ===
+						format(currentDate, "yyyy-MM")
+					) {
+						notesList.push({ type: "general", key, text: value });
+					}
+				} else if (key.includes("-to-")) {
+					const [startStr, endStr] = key
+						.replace("notes-", "")
+						.split("-to-");
+					const sDate = parseLocalDate(startStr);
+					const eDate = parseLocalDate(endStr);
+					if (
+						isSameMonth(sDate, currentDate) ||
+						isSameMonth(eDate, currentDate)
+					) {
+						notesList.push({
+							type: "range",
+							key,
+							start: sDate,
+							end: eDate,
+							text: value,
+						});
+					}
+				} else {
+					const dDate = parseLocalDate(key.replace("notes-", ""));
+					if (isSameMonth(dDate, currentDate)) {
+						notesList.push({
+							type: "single",
+							key,
+							date: dDate,
+							text: value,
+						});
+					}
 				}
 			}
 		}
-		setAllSavedNotes(notesArray);
-	};
-
-	useEffect(() => {
-		setAnimateKey((prev) => prev + 1);
-		fetchAllNotes();
-
-		const handleNotesUpdate = () => fetchAllNotes();
-		window.addEventListener("notesUpdated", handleNotesUpdate);
-		return () =>
-			window.removeEventListener("notesUpdated", handleNotesUpdate);
+		// Sort so general is first, then chronologically
+		notesList.sort((a, b) => (a.type === "general" ? -1 : 1));
+		setAllMonthNotes(notesList);
 	}, [currentDate]);
 
+	// Listen for note changes and refresh
+	useEffect(() => {
+		refreshMonthNotes();
+		window.addEventListener("notes-updated", refreshMonthNotes);
+		return () =>
+			window.removeEventListener("notes-updated", refreshMonthNotes);
+	}, [refreshMonthNotes]);
+
+	// Month Navigation
+	const handlePrevMonth = () => {
+		setCurrentDate(subMonths(currentDate, 1));
+		setStartDate(null);
+		setEndDate(null);
+	};
+
+	const handleNextMonth = () => {
+		setCurrentDate(addMonths(currentDate, 1));
+		setStartDate(null);
+		setEndDate(null);
+	};
+
 	const currentNotesKey = useMemo(() => {
-		if (startDate && endDate) {
+		if (startDate && endDate)
 			return `notes-${format(startDate, "yyyy-MM-dd")}-to-${format(endDate, "yyyy-MM-dd")}`;
-		} else if (startDate) {
-			return `notes-${format(startDate, "yyyy-MM-dd")}`;
-		}
+		if (startDate) return `notes-${format(startDate, "yyyy-MM-dd")}`;
 		return `notes-general-${format(currentDate, "yyyy-MM")}`;
 	}, [startDate, endDate, currentDate]);
 
 	const { notes, saveNote, isLoaded } = useNotes(currentNotesKey);
 
 	const handleDateClick = (clickedDate) => {
-		if (!startDate || (startDate && endDate)) {
+		// --- NEW: If clicking inside an existing saved range, jump to it ---
+		if (!startDate && !endDate) {
+			const parentRangeNote = allMonthNotes.find(
+				(n) =>
+					n.type === "range" &&
+					isWithinInterval(clickedDate, { start: n.start, end: n.end }),
+			);
+			if (parentRangeNote) {
+				setStartDate(parentRangeNote.start);
+				setEndDate(parentRangeNote.end);
+				return;
+			}
+		}
+
+		// Standard selection logic
+		if (!startDate) {
 			setStartDate(clickedDate);
 			setEndDate(null);
-		} else if (isBefore(clickedDate, startDate)) {
-			setStartDate(clickedDate);
+		} else if (startDate && !endDate) {
+			if (isBefore(clickedDate, startDate)) {
+				setStartDate(clickedDate);
+			} else {
+				setEndDate(clickedDate);
+			}
 		} else {
-			setEndDate(clickedDate);
+			setStartDate(clickedDate);
+			setEndDate(null);
 		}
 	};
 
-	const getNoteLabel = (key) => {
-		if (key.includes("general")) return "General Memo";
-		const parts = key.replace("notes-", "").split("-to-");
-		if (parts.length === 1)
-			return format(new Date(parts[0]), "MMM d, yyyy");
-		return `${format(new Date(parts[0]), "MMM d")} - ${format(new Date(parts[1]), "MMM d")}`;
+	const jumpToNote = (note) => {
+		if (note.type === "general") {
+			setStartDate(null);
+			setEndDate(null);
+		} else if (note.type === "single") {
+			setStartDate(note.date);
+			setEndDate(null);
+		} else if (note.type === "range") {
+			setStartDate(note.start);
+			setEndDate(note.end);
+		}
+	};
+
+	const getDayClasses = (dayObj) => {
+		const { date, isCurrentMonth } = dayObj;
+		let classes =
+			"h-9 w-9 flex items-center justify-center rounded-full text-sm cursor-pointer transition-all duration-150 relative z-10 ";
+		if (!isCurrentMonth)
+			return classes + "text-gray-300 pointer-events-none";
+
+		const isStart = startDate && isSameDay(date, startDate);
+		const isEnd = endDate && isSameDay(date, endDate);
+
+		let isBetween = false;
+		if (startDate && endDate) {
+			isBetween =
+				isWithinInterval(date, { start: startDate, end: endDate }) &&
+				!isStart &&
+				!isEnd;
+		} else if (startDate && hoverDate && isAfter(hoverDate, startDate)) {
+			isBetween =
+				isWithinInterval(date, { start: startDate, end: hoverDate }) &&
+				!isStart;
+		}
+
+		if (isStart || isEnd) {
+			classes += "bg-[#1a73e8] text-white font-medium shadow-sm";
+		} else if (isBetween) {
+			classes += "bg-transparent text-[#1a73e8]";
+		} else {
+			classes += "text-[#3c4043] hover:bg-[#f1f3f4]";
+		}
+		return classes;
 	};
 
 	return (
-		<div className="flex flex-col md:flex-row gap-8 h-full w-full">
-			{/* LEFT: Calendar Grid */}
-			<div className="flex-1 flex flex-col gap-6">
-				<div className="grid grid-cols-7 text-center border-b pb-4">
-					{["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((day) => (
+		<div className="flex flex-col h-full justify-between">
+			<div>
+				<div className="flex justify-between items-center mb-6">
+					<h2 className="text-[1.375rem] font-normal text-[#3c4043]">
+						{format(currentDate, "MMMM yyyy")}
+					</h2>
+					<div className="flex gap-1">
+						<button
+							onClick={handlePrevMonth}
+							className="p-2 hover:bg-[#f1f3f4] rounded-full transition-colors text-[#5f6368]">
+							<ChevronLeft size={20} />
+						</button>
+						<button
+							onClick={handleNextMonth}
+							className="p-2 hover:bg-[#f1f3f4] rounded-full transition-colors text-[#5f6368]">
+							<ChevronRight size={20} />
+						</button>
+					</div>
+				</div>
+
+				<div className="grid grid-cols-7 gap-y-2 text-center mb-4">
+					{["M", "T", "W", "T", "F", "S", "S"].map((day, index) => (
 						<div
-							key={day}
-							className={`text-xs font-bold ${theme.text} tracking-wider opacity-70`}>
+							key={index}
+							className="text-[11px] font-medium text-[#70757a] uppercase mb-2">
 							{day}
 						</div>
 					))}
-				</div>
 
-				{/* Note the absence of gap-x here to allow continuous highlighting */}
-				<div className="grid grid-cols-7 gap-y-2 text-center">
 					{days.map((dayObj, i) => {
-						const dateKey = format(dayObj.date, "MM-dd");
-						const fullDateStr = format(dayObj.date, "yyyy-MM-dd");
-						const holiday = HOLIDAYS[dateKey];
-						const hasNote = allSavedNotes.some((n) =>
-							n.key.includes(fullDateStr),
-						);
-
 						const isStart = startDate && isSameDay(dayObj.date, startDate);
 						const isEnd = endDate && isSameDay(dayObj.date, endDate);
 
-						let isBetween = false;
-						if (startDate && endDate) {
-							isBetween =
-								isWithinInterval(dayObj.date, {
-									start: startDate,
-									end: endDate,
-								}) &&
-								!isStart &&
-								!isEnd;
-						} else if (
+						// --- NEW: Check if this day has a saved note to show the dot ---
+						const hasSavedNote =
+							dayObj.isCurrentMonth &&
+							allMonthNotes.some((n) => {
+								if (n.type === "single")
+									return isSameDay(n.date, dayObj.date);
+								if (n.type === "range")
+									return isWithinInterval(dayObj.date, {
+										start: n.start,
+										end: n.end,
+									});
+								return false;
+							});
+
+						// Is it actively highlighted?
+						const isHighlightedBetween =
 							startDate &&
-							hoverDate &&
-							isAfter(hoverDate, startDate)
-						) {
-							isBetween =
-								isWithinInterval(dayObj.date, {
-									start: startDate,
-									end: hoverDate,
-								}) && !isStart;
-						}
+							(endDate || hoverDate) &&
+							isWithinInterval(dayObj.date, {
+								start: startDate,
+								end: endDate || hoverDate,
+							}) &&
+							!isStart &&
+							!isSameDay(dayObj.date, endDate || hoverDate);
+
+						// Hide the highlight completely if there's only a start date and no hover/end
+						const showHighlight =
+							startDate &&
+							(endDate || hoverDate) &&
+							isWithinInterval(dayObj.date, {
+								start: startDate,
+								end: endDate || hoverDate,
+							});
 
 						return (
-							<div
-								key={`${animateKey}-${i}`}
-								className="relative py-1 animate-fade-in"
-								style={{ animationDelay: `${i * 10}ms` }}>
-								{/* The Continuous Background Layer (Absolute positioning creates the seamless link) */}
-								{isBetween && dayObj.isCurrentMonth && (
-									<div
-										className={`absolute inset-y-1 left-0 right-0 ${theme.lightBg}`}
-									/>
-								)}
-								{isStart &&
-									(endDate || hoverDate) &&
-									dayObj.isCurrentMonth && (
-										<div
-											className={`absolute inset-y-1 right-0 w-1/2 ${theme.lightBg}`}
-										/>
-									)}
-								{isEnd && dayObj.isCurrentMonth && (
-									<div
-										className={`absolute inset-y-1 left-0 w-1/2 ${theme.lightBg}`}
-									/>
-								)}
+							<div key={i} className="flex justify-center relative py-1">
+								{/* --- NEW: Flawless Edge-to-Edge Highlight Background --- */}
+								<div
+									className="absolute inset-0 top-1 bottom-1 z-0 bg-[#e8f0fe] transition-all"
+									style={{
+										display: showHighlight ? "block" : "none",
+										// Shift the background to cover exactly from the center of start/end buttons
+										left: isStart ? "50%" : "0",
+										right:
+											isEnd ||
+											(isSameDay(dayObj.date, hoverDate) &&
+												!endDate &&
+												isAfter(hoverDate, startDate))
+												? "50%"
+												: "0",
+										borderTopLeftRadius: isStart ? "9999px" : "0",
+										borderBottomLeftRadius: isStart ? "9999px" : "0",
+										borderTopRightRadius:
+											isEnd || isSameDay(dayObj.date, hoverDate)
+												? "9999px"
+												: "0",
+										borderBottomRightRadius:
+											isEnd || isSameDay(dayObj.date, hoverDate)
+												? "9999px"
+												: "0",
+									}}
+								/>
 
-								{/* The Interactive Button Layer */}
 								<button
 									onClick={() => handleDateClick(dayObj.date)}
 									onMouseEnter={() => setHoverDate(dayObj.date)}
 									onMouseLeave={() => setHoverDate(null)}
-									disabled={!dayObj.isCurrentMonth}
-									className={`relative z-10 w-10 h-10 mx-auto flex items-center justify-center rounded-full text-sm transition-all duration-200
-                    ${!dayObj.isCurrentMonth ? "text-gray-300 hover:bg-gray-50" : ""}
-                    ${isStart || isEnd ? `${theme.color} text-white font-bold shadow-md transform scale-105` : ""}
-                    ${isBetween && dayObj.isCurrentMonth ? `${theme.text} font-medium` : ""}
-                    ${!isStart && !isEnd && !isBetween && dayObj.isCurrentMonth ? `text-gray-700 hover:${theme.lightBg} font-medium` : ""}
-                  `}
-									title={holiday || ""}>
+									className={getDayClasses(dayObj)}
+									disabled={!dayObj.isCurrentMonth}>
 									{format(dayObj.date, "d")}
-								</button>
 
-								{/* The Note & Holiday Dots */}
-								{dayObj.isCurrentMonth && (
-									<div className="absolute bottom-0 left-0 right-0 flex justify-center gap-1 z-10">
-										{holiday && (
-											<span
-												className={`w-1 h-1 rounded-full ${isStart || isEnd ? "bg-white" : theme.color}`}
-											/>
-										)}
-										{hasNote && (
-											<span
-												className={`w-1 h-1 rounded-full ${isStart || isEnd ? "bg-white" : "bg-gray-800"}`}
-											/>
-										)}
-									</div>
-								)}
+									{/* --- NEW: The indicator dot --- */}
+									{hasSavedNote && (
+										<span
+											className={`absolute bottom-0 w-1 h-1 rounded-full ${isStart || isEnd ? "bg-white" : "bg-[#1a73e8]"}`}
+										/>
+									)}
+								</button>
 							</div>
 						);
 					})}
 				</div>
 			</div>
 
-			{/* RIGHT: Notes & Saved List Sidebar */}
-			<div className="w-full md:w-64 flex flex-col gap-6 md:border-l border-gray-100 md:pl-8 mt-6 md:mt-0 pt-6 md:pt-0">
-				{/* Active Editor */}
-				<div className="flex flex-col flex-shrink-0">
-					<div className="flex justify-between items-center mb-2">
-						<h3
-							className={`text-sm font-bold uppercase tracking-wide ${theme.text}`}>
-							{currentNotesKey.includes("general")
-								? `${theme.month} Memo`
-								: "Date Notes"}
-						</h3>
-						<span className="text-[10px] text-gray-400 font-medium">
-							{isLoaded ? "Autosaved" : "..."}
+			<div className="mt-6 flex flex-col gap-4">
+				{allMonthNotes.length > 0 && (
+					<div className="pt-4 border-t border-gray-100 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
+						<div className="flex flex-col gap-2">
+							{allMonthNotes.map((n) => (
+								<div
+									key={n.key}
+									onClick={() => jumpToNote(n)}
+									className="flex items-center gap-3 text-xs p-2 rounded-md hover:bg-[#f1f3f4] cursor-pointer transition-colors border-l-2 border-[#1a73e8]">
+									<span className="font-semibold whitespace-nowrap w-24 text-[#3c4043]">
+										{n.type === "general"
+											? "General"
+											: n.type === "single"
+												? format(n.date, "MMM d")
+												: `${format(n.start, "MMM d")} - ${format(n.end, "d")}`}
+									</span>
+									{/* Truncate ensures long text turns into ellipses (...) */}
+									<span className="truncate text-[#5f6368]">{n.text}</span>
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* Existing Notes Editor */}
+				<div className="pt-4 border-t border-gray-100 flex flex-col gap-3">
+					<div className="flex justify-between items-center text-[#3c4043]">
+						<div className="flex items-center gap-2">
+							<AlignLeft size={16} className="text-[#5f6368]" />
+							<h3 className="text-sm font-medium">
+								{startDate && endDate
+									? `${format(startDate, "MMM d")} - ${format(endDate, "MMM d")}`
+									: startDate
+										? format(startDate, "MMMM d")
+										: `${format(currentDate, "MMMM")} General`}
+							</h3>
+						</div>
+						<span className="text-xs text-[#70757a]">
+							{isLoaded ? "Saved locally" : "Loading..."}
 						</span>
 					</div>
+
 					<textarea
 						value={notes}
 						onChange={(e) => saveNote(e.target.value)}
 						disabled={!isLoaded}
-						className={`w-full h-28 resize-none rounded-xl border border-gray-200 p-3 text-sm text-gray-700 transition-all placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-opacity-50 focus:border-transparent ${theme.color.replace("bg-", "focus:ring-")}`}
-						placeholder={
-							startDate && endDate
-								? `Plans for ${format(startDate, "MMM d")} - ${format(endDate, "MMM d")}...`
-								: startDate
-									? `Plans for ${format(startDate, "MMM d")}...`
-									: `General memos for ${theme.month}...`
-						}
+						className="w-full h-24 resize-none bg-[#f1f3f4] hover:bg-[#e8eaed] rounded-md p-3 text-sm text-[#3c4043] focus:bg-white focus:ring-2 focus:ring-[#1a73e8] focus:outline-none transition-all placeholder:text-[#70757a]"
+						placeholder="Add description or notes..."
 					/>
-				</div>
-
-				{/* Saved Notes Feed */}
-				<div className="flex flex-col flex-1 overflow-hidden">
-					<h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">
-						Saved Notes
-					</h3>
-					<div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-						{allSavedNotes.length === 0 ? (
-							<p className="text-xs text-gray-400 italic">
-								No notes saved yet.
-							</p>
-						) : (
-							allSavedNotes.map((noteObj, idx) => (
-								<div
-									key={idx}
-									className="bg-gray-50 border border-gray-100 p-3 rounded-lg hover:bg-gray-100 transition-colors cursor-default">
-									<div
-										className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${theme.text}`}>
-										{getNoteLabel(noteObj.key)}
-									</div>
-									<p className="text-xs text-gray-600 line-clamp-2 leading-relaxed">
-										{noteObj.content}
-									</p>
-								</div>
-							))
-						)}
-					</div>
 				</div>
 			</div>
 		</div>
