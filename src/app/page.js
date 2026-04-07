@@ -16,7 +16,7 @@ export default function Home() {
 
 	return (
 		<main className="min-h-screen bg-neutral-100 flex items-center justify-center p-4 sm:p-8 transition-colors duration-500">
-			<div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row">
+			<div className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row">
 				<div
 					className={`w-full md:w-5/12 h-64 md:h-auto relative ${theme.color} transition-colors duration-500`}>
 					<img

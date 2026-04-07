@@ -1,4 +1,3 @@
-// src/hooks/useNotes.js
 import { useState, useEffect } from "react";
 
 export function useNotes(storageKey) {
@@ -8,11 +7,7 @@ export function useNotes(storageKey) {
 	useEffect(() => {
 		try {
 			const storedNote = window.localStorage.getItem(storageKey);
-			if (storedNote !== null) {
-				setNotes(storedNote);
-			} else {
-				setNotes("");
-			}
+			setNotes(storedNote !== null ? storedNote : "");
 			setIsLoaded(true);
 		} catch (error) {
 			console.warn("Error reading localStorage", error);
@@ -24,6 +19,7 @@ export function useNotes(storageKey) {
 		setNotes(newNote);
 		try {
 			window.localStorage.setItem(storageKey, newNote);
+			window.dispatchEvent(new Event("notesUpdated"));
 		} catch (error) {
 			console.warn("Error setting localStorage", error);
 		}
