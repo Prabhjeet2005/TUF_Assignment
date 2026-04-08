@@ -1,7 +1,7 @@
 # Interactive Calendar Component
 
-**Live Demo:** https://tuf-assignment-bice.vercel.app/
-**Video Walkthrough:** [Insert your Loom/YouTube link here]
+**Live Demo:** `https://tuf-assignment-bice.vercel.app/`
+**Video Walkthrough:** `https://youtu.be/0E4US_Kx1pI`
 
 This project is a highly interactive, fully responsive React/Next.js calendar component built to emulate a physical wall calendar. It was developed to fulfill a frontend engineering challenge, focusing on clean architecture, complex state management, and an exceptional user experience.
 
